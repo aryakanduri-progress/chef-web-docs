@@ -81,7 +81,7 @@ A Chef InSpec profile with six controls that assert:
 - The HTTPS listener refuses SSL 3.0, TLS 1.0, and TLS 1.1.
 - Responses send HTTP Strict Transport Security (HSTS) with a `max-age` of at least six months,
   and send `X-Content-Type-Options` and `X-Frame-Options`.
-- The server certificate is valid for at least 30 more days and uses a key of at least 2048 bits.
+- The configured certificate file is valid for at least 30 more days and uses a key of at least 2048 bits.
 - The Tomcat shutdown port is disabled.
 - The Tomcat example, documentation, and management applications aren't deployed.
 
@@ -119,7 +119,7 @@ You need:
   The `ssl` resource opens TLS connections to the target's host name,
   so a firewall between you and the server affects the result.
 - **The paths your installation uses**:
-  the main NGINX configuration file, the certificate NGINX presents,
+  the main NGINX configuration file, the certificate file configured for NGINX,
   and the Tomcat `CATALINA_BASE` directory.
   The defaults on this page are `/etc/nginx/nginx.conf`, `/etc/nginx/tls/server.crt`, and `/opt/tomcat`.
 
@@ -175,7 +175,7 @@ inputs:
     type: Numeric
     value: 15768000
   - name: certificate_path
-    description: Path to the certificate the web server presents
+    description: Path to the certificate file configured for the web server
     type: String
     value: /etc/nginx/tls/server.crt
   - name: certificate_min_days
@@ -263,7 +263,7 @@ end
 control 'web-04' do
   impact 'high'
   title 'Renew certificates before they expire'
-  desc 'The certificate the web server presents must remain valid for at least the configured number of days.'
+  desc 'The certificate file configured for the web server must remain valid for at least the configured number of days.'
   desc 'rationale', 'An expired certificate takes the service down for every client that validates it.'
   tag 'web', 'tls', 'certificate'
 
@@ -335,9 +335,13 @@ What's specific to web servers and middleware here:
 
 `x509_certificate`
 : The [`x509_certificate` resource](/inspec/latest/resources/core/x509_certificate/)
-  reads the certificate file and reports `validity_in_days` as the time left until it expires.
+  reads the certificate file on disk and reports `validity_in_days` as the time left until it expires.
   Set `certificate_min_days` longer than your renewal process takes,
   so a failure is a warning you can act on, not an outage.
+  This control checks the deployed certificate file.
+  To test the certificate presented on the wire during a live TLS handshake
+  (accounting for load balancers or SNI virtual hosts),
+  run an external certificate check against the public endpoint.
 
 `xml(...)` with `Server/@port`
 : The [`xml` resource](/inspec/latest/resources/core/xml/)
