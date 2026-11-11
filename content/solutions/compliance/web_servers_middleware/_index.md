@@ -218,11 +218,29 @@ control 'web-01' do
     file(input('nginx_conf_path')).exist?
   end
 
-  server_tokens = nginx_conf(input('nginx_conf_path')).params.dig('http', 0, 'server_tokens').to_a.flatten
+  conf = nginx_conf(input('nginx_conf_path'))
 
   describe 'server_tokens in the NGINX http block' do
-    subject { server_tokens }
+    subject { conf.params.dig('http', 0, 'server_tokens').to_a.flatten }
     it { should cmp ['off'] }
+  end
+
+  conf.servers.each_with_index do |server, idx|
+    describe "server_tokens override in NGINX server block #{idx + 1}" do
+      subject { server.params['server_tokens'].to_a.flatten }
+      it { should_not cmp ['on'] }
+    end
+  end
+
+  conf.locations.each_with_index do |loc, idx|
+    describe "server_tokens override in NGINX location block #{idx + 1}" do
+      subject { loc.params['server_tokens'].to_a.flatten }
+      it { should_not cmp ['on'] }
+    end
+  end
+
+  describe http(input('site_url'), ssl_verify: false) do
+    its('headers.Server') { should_not match %r{nginx/\d+}i }
   end
 end
 
@@ -309,12 +327,14 @@ end
 
 What's specific to web servers and middleware here:
 
-`nginx_conf(...).params.dig('http', 0, 'server_tokens')`
+`nginx_conf` and `server_tokens`
 : The [`nginx_conf` resource](/inspec/latest/resources/core/nginx_conf/)
   parses `nginx.conf` and every file it includes into nested `params`.
-  `web-01` reads `server_tokens` from the first `http` block.
-  If the directive isn't set at all, the value is empty and the control fails ---
-  which is correct, because NGINX sends its version by default.
+  `web-01` checks that `server_tokens` is `off` in the global `http` block,
+  and iterates over `conf.servers` and `conf.locations` to ensure no virtual host
+  or location block overrides it with `server_tokens on;`.
+  It also checks the live `Server` response header with `http` to confirm
+  the server doesn't disclose its version number on the wire.
   The `nginx_conf` resource is marked experimental, so confirm it parses your configuration
   by running `web-01` against one server before you roll it out.
 
@@ -428,13 +448,14 @@ Profile:   Web server and middleware baseline (web-tier-baseline)
 Version:   0.1.0
 Target:    ssh://admin@web01.example.com:22
 
-  ×  web-01: Don't disclose the NGINX version
+  ×  web-01: Don't disclose the NGINX version (1 failed)
      ×  server_tokens in the NGINX http block is expected to cmp == ["off"]
 
      expected: ["off"]
           got: ["on"]
 
      (compared using `cmp` matcher)
+     ✔  HTTP GET on https://localhost/ headers.Server is expected not to match /nginx\/\d+/i
 
   ✔  web-02: Accept only TLS 1.2 and later
      ✔  SSL/TLS on web01.example.com:443 with protocol == "ssl3" is expected not to be enabled
